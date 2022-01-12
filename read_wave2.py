@@ -29,6 +29,8 @@ import struct
 import sys
 import time
 
+import json
+import urllib.request
 
 class Wave2():
 
@@ -92,19 +94,26 @@ class CurrentValues():
         self.temperature = temperature
 
     @classmethod
-    def from_bytes(cls, rawdata):
+    def from_bytes(valuesJson, rawdata):
         data = struct.unpack("<4B8H", rawdata)
         if data[0] != 1:
             raise ValueError("Incompatible current values version (Expected 1, got {})".format(data[0]))
-        return cls(data[1]/2.0, data[4], data[5], data[6]/100.0)
+        valuesJson = {}
+        valuesJson["Humidity"] = data[1]/2.0
+        valuesJson["Radon STA"] = data[4]
+        valuesJson["Radon LTA"] = data[5]
+        valuesJson["Temperature"] = data[6]/100.0
+        valuesJson["Light"] = data[2]
+        #valuesJson["Waves"] = data[3]
+        return valuesJson
 
-    def __str__(self):
+"""    def __str__(self):
         msg = "Humidity: {} %rH, ".format(self.humidity)
         msg += "Temperature: {} *C, ".format(self.temperature)
         msg += "Radon STA: {} Bq/m3, ".format(self.radon_sta)
         msg += "Radon LTA: {} Bq/m3".format(self.radon_lta)
         return msg
-
+"""
 
 def _parse_serial_number(manufacturer_data):
     try:
@@ -119,7 +128,7 @@ def _parse_serial_number(manufacturer_data):
 def _argparser():
     parser = argparse.ArgumentParser(prog="read_wave2", description="Script for reading current values from a 2nd Gen Wave product")
     parser.add_argument("SERIAL_NUMBER", type=int, help="Airthings device serial number found under the magnetic backplate.")
-    parser.add_argument("SAMPLE_PERIOD", type=int, default=60, help="Time in seconds between reading the current values")
+    parser.add_argument("URL", type=str, help="URL for POSTing the JSON-data to")
     args = parser.parse_args()
     return args
 
@@ -127,7 +136,8 @@ def _argparser():
 def _main():
     args = _argparser()
     wave2 = Wave2(args.SERIAL_NUMBER)
-
+    myURL = args.URL
+    
     def _signal_handler(sig, frame):
         wave2.disconnect()
         sys.exit(0)
@@ -138,8 +148,12 @@ def _main():
         wave2.connect(retries=3)
         current_values = wave2.read()
         print(current_values)
+        req = urllib.request.Request(myURL, data=bytes(json.dumps(current_values), encoding="utf-8"))
+        req.add_header('Content-Type', 'application/json; charset=utf-8')
+        response = urllib.request.urlopen(req)
+        readResponse = response.read()
         wave2.disconnect()
-        time.sleep(args.SAMPLE_PERIOD)
+        exit()
 
 
 if __name__ == "__main__":
